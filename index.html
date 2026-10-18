@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ML in Motion</title>
+  <meta name="description" content="Learn machine learning concepts through interactive 3D animations built with Three.js." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <aside id="sidebar" aria-label="Lessons">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div>
+        <div class="brand-name">ML in Motion</div>
+        <div class="brand-sub">Machine learning, animated</div>
+      </div>
+    </div>
+    <nav id="nav"></nav>
+    <footer class="sidebar-foot">Drag to orbit · Scroll to zoom · <kbd>Space</kbd> pause · <kbd>←</kbd><kbd>→</kbd> lessons</footer>
+  </aside>
+
+  <main id="stage">
+    <canvas id="scene"></canvas>
+
+    <header class="topbar">
+      <button id="menu-btn" class="icon-btn" aria-label="Toggle lesson list">☰</button>
+      <div class="titles">
+        <div id="lesson-category" class="eyebrow"></div>
+        <h1 id="lesson-title"></h1>
+      </div>
+      <div class="nav-btns">
+        <button id="prev-btn" class="icon-btn" aria-label="Previous lesson">‹</button>
+        <button id="next-btn" class="icon-btn" aria-label="Next lesson">›</button>
+      </div>
+    </header>
+
+    <section id="panel" aria-label="Lesson details">
+      <button id="panel-toggle" class="panel-toggle" aria-label="Toggle details">Details</button>
+      <div class="panel-body">
+        <div id="lesson-formula" class="formula"></div>
+        <div id="lesson-controls" class="controls"></div>
+        <div id="lesson-stats" class="stats"></div>
+        <div id="lesson-info" class="info"></div>
+      </div>
+    </section>
+
+    <div class="playbar">
+      <button id="play-btn" class="icon-btn" aria-label="Pause">❚❚</button>
+      <label class="speed">Speed
+        <input id="speed" type="range" min="0.25" max="3" step="0.25" value="1" />
+        <output id="speed-out">1×</output>
+      </label>
+      <button id="cam-btn" class="text-btn">Reset view</button>
+    </div>
+    <div id="hint" class="hint"></div>
+  </main>
+
+  <noscript>This site needs JavaScript and WebGL to run its animations.</noscript>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
