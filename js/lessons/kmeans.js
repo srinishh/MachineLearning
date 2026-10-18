@@ -1,8 +1,12 @@
 import * as THREE from 'three';
-import { rng, gauss, sphereCloud, setInstance, setInstanceColor, commitInstances, PALETTE, smoothstep } from '../helpers.js';
+import { rng, sphereCloud, setInstance, setInstanceColor, commitInstances, textSprite, PALETTE, smoothstep } from '../helpers.js';
+import { COUNTRIES, FIELDS, scaler } from '../data/covid.js';
 
 const STEP = 1.1; // seconds per assign / update phase
 const COLORS = [...PALETTE, 0xe2e8f0, 0x22d3ee];
+const S = 1.9; // display units per standard deviation
+const FEATS = ['cases_pm', 'deaths_pm', 'vax'];
+const hex = (c) => '#' + c.toString(16).padStart(6, '0');
 
 export default {
   id: 'kmeans',
@@ -10,7 +14,7 @@ export default {
   category: 'Unsupervised Learning',
   camera: { position: [12, 8, 14], target: [0, 0, 0] },
   formula: '1. Assign: cᵢ = argminⱼ ‖xᵢ − μⱼ‖²<br>2. Update: μⱼ = mean of points assigned to j<br>Inertia = Σ ‖xᵢ − μ_cᵢ‖²',
-  hint: 'Octahedra are centroids; lines show which centroid each point belongs to',
+  hint: 'Each dot is a country · Octahedra are cluster centres · Click a dot to see its cluster',
   info: `
     <h3>What it is</h3>
     <p>k-means groups <strong>unlabelled</strong> data into <strong>k clusters</strong>. Nobody tells it what
@@ -24,17 +28,31 @@ export default {
     </ol>
     <p>Each round can only lower the <strong>inertia</strong> (total squared distance to centroids), so
     k-means always converges, though not always to the best answer.</p>
+    <h3>On the COVID data</h3>
+    <p>Each country is placed in 3D by its pandemic profile: <strong>cases per million</strong> (x, log),
+    <strong>deaths per million</strong> (y, log) and <strong>% fully vaccinated</strong> (z), all standardised. No labels are
+    given. k-means discovers groups such as “high cases, high deaths, well vaccinated” (much of Europe and the Americas) or
+    “few reported cases, low vaccination” (much of sub-Saharan Africa, where testing was limited). The <em>Cluster profiles</em>
+    box describes each group in real units once the algorithm converges.</p>
+    <div class="real-life">
+      <h3>Real-life scenario</h3>
+      <p>Clustering finds structure nobody labelled. During COVID, researchers clustered hospital patients by symptoms and lab
+      results and found distinct <strong>clinical phenotypes</strong> with different risks and treatment responses. Public-health
+      teams clustered regions with similar epidemic trajectories to compare policies. Businesses use the same method for
+      customer segmentation.</p>
+    </div>
     <h3>Try this</h3>
     <ul>
-      <li>Press <strong>Re-initialise</strong> a few times. Unlucky starting positions can merge two real clusters or split one, which is why k-means is usually run several times.</li>
-      <li>Change <strong>k</strong>. The data has 5 natural groups, so see what happens with 3 or 8.</li>
+      <li>Press <strong>Re-initialise</strong> a few times. Unlucky starting positions can give different groupings, which is why k-means is usually run several times.</li>
+      <li>Change <strong>k</strong>. Real data rarely has an obvious “true” number of clusters. Watch how inertia falls as k grows, and look for the “elbow”.</li>
     </ul>
   `,
-  create({ scene, ui }) {
+  create({ scene, ui, onClick }) {
     const rand = rng(61);
-    const N = 320;
-    let X = [];
-    let k = 5;
+    const scalers = FEATS.map((f) => scaler(f));
+    const X = COUNTRIES.map((_, i) => scalers.map((s) => s.z[i] * S));
+    const N = X.length;
+    let k = 4;
     let centroids = [];
     let from = [];
     let assign = new Int32Array(N).fill(-1);
@@ -43,7 +61,7 @@ export default {
     let iter = 0;
     let converged = false;
 
-    const pts = sphereCloud(N, 0.11);
+    const pts = sphereCloud(N, 0.14);
     scene.add(pts);
 
     const cGroup = new THREE.Group();
@@ -68,14 +86,43 @@ export default {
       status: ui.stat('Status', { wide: true }),
     };
 
-    function newData() {
-      X = [];
-      const centers = Array.from({ length: 5 }, () => [rand() * 9 - 4.5, rand() * 9 - 4.5, rand() * 9 - 4.5]);
-      for (let i = 0; i < N; i++) {
-        const c = centers[i % 5];
-        X.push(c.map((v) => v + gauss(rand) * 0.95));
+    const axisLabel = (text, x, y, z) => {
+      const s = textSprite(text, { height: 0.4, color: '#e2e8f0' });
+      s.position.set(x, y, z);
+      scene.add(s);
+    };
+    axisLabel('Cases/M (log) →', 7.8, -7, -7);
+    axisLabel('Deaths/M (log) ↑', -7, 7.6, -7);
+    axisLabel('% vaccinated →', -7, -7, 7.8);
+    for (const name of ['United States', 'India', 'Nigeria', 'Japan', 'Peru', 'Germany', 'China']) {
+      const i = COUNTRIES.findIndex((c) => c.name === name);
+      if (i < 0) continue;
+      const s = textSprite(name, { height: 0.3, color: '#cbd5e1' });
+      s.position.set(X[i][0], X[i][1] + 0.4, X[i][2]);
+      scene.add(s);
+    }
+
+    const profiles = ui.html('');
+    const pickStat = ui.stat('Selected country', { wide: true });
+    pickStat('Click a dot');
+    onClick((ray) => {
+      const hit = ray.intersectObject(pts)[0];
+      if (hit?.instanceId === undefined) return;
+      const c = COUNTRIES[hit.instanceId];
+      const a = assign[hit.instanceId];
+      pickStat(`${c.name} → cluster ${a >= 0 ? a + 1 : '–'} · ${FIELDS.cases_pm.fmt(c.cases_pm)} cases/M · ${FIELDS.deaths_pm.fmt(c.deaths_pm)} deaths/M · ${FIELDS.vax.fmt(c.vax)} vaccinated`);
+    });
+
+    function showProfiles() {
+      const rows = [];
+      for (let j = 0; j < k; j++) {
+        const members = COUNTRIES.filter((_, i) => assign[i] === j);
+        if (!members.length) continue;
+        const avg = (f) => members.reduce((s, c) => s + c[f], 0) / members.length;
+        const examples = [...members].sort((a, b) => b.population - a.population).slice(0, 3).map((c) => c.name).join(', ');
+        rows.push(`<li><span style="color:${hex(COLORS[j])}">●</span> <strong>Cluster ${j + 1}</strong> (${members.length}): ~${FIELDS.cases_pm.fmt(avg('cases_pm'))} cases/M, ${FIELDS.deaths_pm.fmt(avg('deaths_pm'))} deaths/M, ${FIELDS.vax.fmt(avg('vax'))} vaccinated · e.g. ${examples}</li>`);
       }
-      init();
+      profiles.innerHTML = `<div class="field-head"><span>Cluster profiles (averages)</span></div><ul class="profiles">${rows.join('')}</ul>`;
     }
 
     function init() {
@@ -145,9 +192,8 @@ export default {
 
     ui.slider({ label: 'Number of clusters k', min: 2, max: 8, step: 1, value: k, onInput: (v) => { k = v; init(); } });
     ui.button('Re-initialise', init, { primary: true });
-    ui.button('New data', newData);
 
-    newData();
+    init();
     const col = new THREE.Color();
 
     return {
@@ -157,6 +203,7 @@ export default {
           timer = 0;
           if (phase === 'assign') {
             const changed = doAssign();
+            showProfiles();
             if (changed === 0 && iter > 0) converged = true;
             phase = 'update';
           } else {

@@ -1,9 +1,15 @@
 import * as THREE from 'three';
 import {
-  rng, gauss, grid2D, sphereCloud, setInstance, setInstanceColor, commitInstances,
+  rng, grid2D, sphereCloud, setInstance, setInstanceColor, commitInstances,
   unitCylinder, placeCylinder, PALETTE, damp,
+  textSprite,
 } from '../helpers.js';
+import { COUNTRIES, FIELDS, scaler } from '../data/covid.js';
 
+const VAX_GOAL = 60; // % fully vaccinated
+const S = 2.1; // display units per standard deviation
+const LIFE = scaler('life_exp');
+const HDI = scaler('hdi');
 const LIFT = 0.4; // φ(x) = (x₁, x₂, LIFT·(x₁² + x₂²))
 const RADIUS = 2.2;
 
@@ -13,11 +19,16 @@ export default {
   category: 'Supervised Learning',
   camera: { position: [0, -6, 17], target: [0, 0, 0] },
   formula: 'f(x) = w·x + b<br>minimise  ½λ‖w‖² + ¹⁄ₙ Σ max(0, 1 − yᵢ·f(xᵢ))<br>margin width = 2 / ‖w‖',
-  hint: 'Ringed points are support vectors, the only ones that decide the boundary',
+  hint: 'Ringed countries are support vectors, the only ones that decide the boundary · Click a dot to name it',
   info: `
     <h3>What it is</h3>
     <p>Many lines can separate two classes. An SVM picks the one with the <strong>widest margin</strong>,
     the largest empty “street” between the classes. A wide margin tends to generalise better to new data.</p>
+    <h3>On the COVID data</h3>
+    <p>Can a country's development level predict whether it reached <strong>60% full vaccination</strong> by the end of 2022?
+    <span style="color:#f72585">Pink</span> countries did and <span style="color:#4cc9f0">cyan</span> countries didn't. They are placed by
+    <strong>life expectancy</strong> (x) and the <strong>Human Development Index</strong> (y). The classes overlap (Bulgaria, Romania and Russia
+    lagged despite high HDI, while Cambodia, Nepal and Bangladesh vaccinated quickly), so this is a <strong>soft-margin</strong> problem.</p>
     <h3>Support vectors</h3>
     <p>Only the points that touch or cross the edge of the street affect the solution. These are the
     <strong>support vectors</strong> (ringed). You could delete every other point and get the same boundary.</p>
@@ -29,16 +40,23 @@ export default {
     <p>Switch the mode to <strong>Kernel trick</strong>. The two classes form rings, and no straight line can
     separate them. Press <strong>Lift into 3D</strong>: each point gets a third coordinate <code>x₁² + x₂²</code>.
     In that higher-dimensional space a flat plane separates them easily, and seen back in 2D that plane becomes a
-    circle. Kernels such as RBF do this implicitly, without ever computing the new coordinates.</p>
+    circle. Kernels such as RBF do this implicitly, without ever computing the new coordinates. (This mode uses a small toy
+    dataset because the trick is easiest to see on rings.)</p>
+    <div class="real-life">
+      <h3>Real-life scenario</h3>
+      <p>Before deep learning, SVMs were the go-to classifier for medical and biological data with many features and few samples.
+      Examples include classifying tumours from gene-expression profiles, detecting disease from blood-test panels, and early COVID
+      studies that flagged severe cases from routine lab values. Their margins make them robust when data is scarce.</p>
+    </div>
   `,
-  create({ scene, ui, setCamera }) {
+  create({ scene, ui, setCamera, onClick }) {
     scene.add(grid2D(14, 14));
     const rand = rng(51);
 
     // ---------- Linear mode ----------
     const linear = new THREE.Group();
     scene.add(linear);
-    const N = 60;
+    const N = COUNTRIES.length;
     let X = [];
     let Y = [];
     let w = [0.1, 0];
@@ -64,20 +82,40 @@ export default {
     };
 
     function newLinear() {
-      X = [];
-      Y = [];
-      for (let i = 0; i < N; i++) {
-        const y = i % 2 ? 1 : -1;
-        X.push([y * 1.8 + gauss(rand) * 1.0, y * 1.6 + gauss(rand) * 1.0]);
-        Y.push(y);
-        setInstanceColor(pts, i, y > 0 ? PALETTE[1] : PALETTE[0]);
-        setInstance(pts, i, X[i][0], X[i][1], 0);
-      }
+      X = COUNTRIES.map((_, i) => [LIFE.z[i] * S, HDI.z[i] * S]);
+      Y = COUNTRIES.map((c) => (c.vax >= VAX_GOAL ? 1 : -1));
+      X.forEach((p, i) => {
+        setInstanceColor(pts, i, Y[i] > 0 ? PALETTE[1] : PALETTE[0]);
+        setInstance(pts, i, p[0], p[1], 0);
+      });
       commitInstances(pts);
       w = [0.1, 0];
       b = 0;
       t = 0;
     }
+
+    const ticks = new THREE.Group();
+    linear.add(ticks);
+    const tick = (text, x, y, color = '#94a3b8', height = 0.3) => {
+      const s = textSprite(text, { height, color });
+      s.position.set(x, y, 0);
+      ticks.add(s);
+    };
+    for (const zv of [-2, 0, 2]) {
+      tick(LIFE.format(LIFE.fromZ(zv)), zv * S, -7.4);
+      tick(HDI.format(HDI.fromZ(zv)), -7.8, zv * S);
+    }
+    tick('Life expectancy →', 4.5, -8.1, '#e2e8f0', 0.36);
+    tick('Human Development Index ↑', -4.4, 7.5, '#e2e8f0', 0.36);
+    const pickStat = ui.stat('Selected country', { wide: true });
+    pickStat(`Pink = ≥ ${VAX_GOAL}% fully vaccinated · click a dot`);
+    onClick((ray) => {
+      if (mode !== 'linear') return;
+      const hit = ray.intersectObject(pts)[0];
+      if (hit?.instanceId === undefined) return;
+      const c = COUNTRIES[hit.instanceId];
+      pickStat(`${c.name}: life exp. ${FIELDS.life_exp.fmt(c.life_exp)}, HDI ${FIELDS.hdi.fmt(c.hdi)} → ${FIELDS.vax.fmt(c.vax)} fully vaccinated`);
+    });
 
     function trainStep() {
       t++;
@@ -142,7 +180,6 @@ export default {
       },
     });
     ui.slider({ label: 'Regularization λ (linear mode)', min: 0.005, max: 0.5, step: 0.005, value: lambda, format: (v) => v.toFixed(3), onInput: (v) => { lambda = v; t = 0; } });
-    ui.button('New data', newLinear);
     const liftBtn = ui.button('Lift into 3D', () => {
       if (mode !== 'kernel') return;
       liftTarget = liftTarget ? 0 : 1;

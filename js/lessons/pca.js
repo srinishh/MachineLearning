@@ -1,5 +1,10 @@
 import * as THREE from 'three';
-import { rng, gauss, sphereCloud, setInstance, setInstanceColor, commitInstances, textSprite, heat, damp, clearGroup, PALETTE } from '../helpers.js';
+import { sphereCloud, setInstance, setInstanceColor, commitInstances, textSprite, damp, clearGroup, PALETTE } from '../helpers.js';
+import { COUNTRIES, CONTINENTS, CONTINENT_COLORS, FIELDS, scaler } from '../data/covid.js';
+
+const FEATS = ['median_age', 'life_exp', 'gdp'];
+const S = 2; // display units per standard deviation
+const hex = (c) => '#' + c.toString(16).padStart(6, '0');
 
 // Jacobi eigen-decomposition of a symmetric 3×3 matrix.
 export function eigSym3(A) {
@@ -50,7 +55,7 @@ export default {
   category: 'Unsupervised Learning',
   camera: { position: [11, 7, 13], target: [0, 0, 0] },
   formula: 'Σ = ¹⁄ₙ Σ (xᵢ − μ)(xᵢ − μ)ᵀ<br>Σ·vₖ = λₖ·vₖ<br>zᵢ = Vₖᵀ (xᵢ − μ)',
-  hint: 'Arrows are principal components, scaled by the spread along each one',
+  hint: 'Each dot is a country · Arrows are principal components, scaled by the spread along each one · Click a dot to name it',
   info: `
     <h3>What it is</h3>
     <p>PCA is the classic <strong>dimensionality reduction</strong> method. Real data often has many
@@ -63,17 +68,24 @@ export default {
       <li>Its <strong>eigenvectors</strong> are the principal directions, and the <strong>eigenvalues</strong> are the variance along each one.</li>
       <li>Project onto the top components.</li>
     </ol>
-    <h3>Reading the animation</h3>
-    <p>The cloud is a tilted, flattened 3D blob. Colour follows each point's PC1 coordinate, so you can see
-    the order is kept after projection. Projecting onto 2 PCs flattens the data onto the plane, and almost
-    no structure is lost (look at <em>variance retained</em>). Projecting onto 1 PC squeezes everything onto a line.</p>
-    <h3>Used for</h3>
-    <p>Visualising high-dimensional data, compression, denoising, and speeding up other models.</p>
+    <h3>On the COVID data</h3>
+    <p>Each country sits in 3D by three standardised indicators: <strong>median age</strong> (x), <strong>life expectancy</strong>
+    (y) and <strong>GDP per capita</strong> (z, log). They move together: richer countries tend to be older and longer-lived, so
+    the cloud is a stretched cigar. PCA finds that <strong>PC1</strong> is roughly an equal mix of all three, a single
+    “development” axis that explains most of the variation. Projecting to 1D keeps that ordering: countries are lined up from
+    least to most developed while losing only a small share of the information. Colours are continents, and the panel shows
+    each component's recipe (its <strong>loadings</strong>).</p>
+    <div class="real-life">
+      <h3>Real-life scenario</h3>
+      <p>PCA is how many <strong>composite indices</strong> are built. Researchers combined dozens of census variables into COVID
+      vulnerability indices to decide where to send testing sites and vaccines first. In genomics, PCA of thousands of genetic
+      markers separates populations by ancestry, and it is a standard first step for visualising any high-dimensional data.</p>
+    </div>
   `,
-  create({ scene, ui }) {
-    const rand = rng(71);
-    const N = 450;
-    const pts = sphereCloud(N, 0.09, { segments: 10 });
+  create({ scene, ui, onClick }) {
+    const N = COUNTRIES.length;
+    const scalers = FEATS.map((f) => scaler(f));
+    const pts = sphereCloud(N, 0.14, { segments: 12 });
     scene.add(pts);
     const extras = new THREE.Group();
     scene.add(extras);
@@ -100,16 +112,29 @@ export default {
       ev: ui.stat('Explained variance (PC1/2/3)', { wide: true }),
       kept: ui.stat('Variance retained'),
       mode: ui.stat('View'),
+      pick: ui.stat('Selected country', { wide: true }),
     };
+    stats.pick('Click a dot');
+    const loadings = ui.html('');
+    ui.html(`<div class="legend">${CONTINENTS.map((c) => `<span style="--c:${hex(CONTINENT_COLORS[c])}">${c}</span>`).join('')}</div>`);
+    const axis = (text, x, y, z) => {
+      const s = textSprite(text, { height: 0.36, color: '#94a3b8' });
+      s.position.set(x, y, z);
+      scene.add(s);
+    };
+    axis('Median age →', 7, -6, -6);
+    axis('Life expectancy ↑', -6, 6.8, -6);
+    axis('GDP per capita (log) →', -6, -6, 7.4);
+    onClick((ray) => {
+      const hit = ray.intersectObject(pts)[0];
+      if (hit?.instanceId === undefined) return;
+      const c = COUNTRIES[hit.instanceId];
+      const pc1 = dot(sub(X[hit.instanceId], mean), eig[0].vector) / S;
+      stats.pick(`${c.name}: ${FEATS.map((f) => `${FIELDS[f].short} ${FIELDS[f].fmt(c[f])}`).join(' · ')} → PC1 score ${pc1.toFixed(2)}`);
+    });
 
     function newData() {
-      const rot = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(rand() * 2 - 1, rand() * 3, rand() * 2 - 1));
-      const v = new THREE.Vector3();
-      X = [];
-      for (let i = 0; i < N; i++) {
-        v.set(gauss(rand) * 3.2, gauss(rand) * 1.3, gauss(rand) * 0.35).applyMatrix4(rot);
-        X.push([v.x, v.y, v.z]);
-      }
+      X = COUNTRIES.map((_, i) => scalers.map((s) => s.z[i] * S));
       mean = [0, 1, 2].map((d) => X.reduce((s, p) => s + p[d], 0) / N);
       const C = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
       for (const p of X) {
@@ -118,13 +143,10 @@ export default {
       eig = eigSym3(C);
       cur = X.map((p) => [...p]);
 
-      const lo = -3 * Math.sqrt(eig[0].value);
-      const hi = 3 * Math.sqrt(eig[0].value);
-      const col = new THREE.Color();
-      X.forEach((p, i) => {
-        const z1 = dot(sub(p, mean), eig[0].vector);
-        setInstanceColor(pts, i, heat(0.1 + 0.9 * ((z1 - lo) / (hi - lo)), col));
-      });
+      COUNTRIES.forEach((c, i) => setInstanceColor(pts, i, CONTINENT_COLORS[c.continent]));
+      // Make PC1 point toward "more developed" so its sign is easy to read.
+      if (eig[0].vector.reduce((s, v) => s + v, 0) < 0) eig[0].vector = eig[0].vector.map((v) => -v);
+      loadings.innerHTML = `<div class="field-head"><span>Loadings (each PC's recipe)</span></div><ul class="profiles">${eig.map((e, i) => `<li><strong>PC${i + 1}</strong> = ${e.vector.map((v, j) => `${j ? (v < 0 ? ' − ' : ' + ') : v < 0 ? '−' : ''}${Math.abs(v).toFixed(2)}·${FIELDS[FEATS[j]].short}`).join('')}</li>`).join('')}</ul>`;
 
       // Arrows and labels for each component.
       clearGroup(extras);
@@ -174,7 +196,6 @@ export default {
     ui.button('Original 3D', () => setMode(0), { primary: true });
     ui.button('Project → 2D', () => setMode(1));
     ui.button('Project → 1D', () => setMode(2));
-    ui.button('New data', newData);
     ui.toggle({ label: 'Auto-play through projections', value: true, onChange: (v) => { auto = v; } });
 
     newData();

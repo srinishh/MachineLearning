@@ -26,16 +26,19 @@ export default {
   category: 'Reinforcement Learning',
   camera: { position: [0, 11, 9.5], target: [0, 0, 0.4] },
   formula: 'Q(s,a) ← Q(s,a) + α·[ r + γ·maxₐ′ Q(s′,a′) − Q(s,a) ]<br>action = random with prob. ε, otherwise argmaxₐ Q(s,a)',
-  hint: 'Tiles turn green as the agent learns which states lead to the goal',
+  hint: 'The delivery van learns a route to the vaccine clinic · Tiles turn green as it learns which streets lead there',
   info: `
     <h3>What it is</h3>
     <p>In <strong>reinforcement learning</strong> nobody gives the agent the right answers. It
     <strong>acts</strong>, receives <strong>rewards</strong>, and learns from experience which actions pay off
     in the long run.</p>
-    <h3>The world</h3>
+    <h3>The COVID scenario</h3>
+    <p>A <strong>vaccine-delivery van</strong> (the blue ball) starts at the depot in the top corner and must find its way across town.
+    It has no map, only experience.</p>
     <ul>
-      <li>Reaching the gold <strong>goal</strong> gives <code>+10</code>. Falling into a red <strong>pit</strong> gives <code>−10</code>. Each step costs <code>−0.1</code>, so shorter paths are better.</li>
-      <li>Grey blocks are walls.</li>
+      <li>Reaching the gold <strong>vaccine clinic</strong> gives <code>+10</code>.</li>
+      <li>Driving into a red <strong>outbreak hotspot</strong> gives <code>−10</code>: the crew must quarantine and the run fails.</li>
+      <li>Each step costs <code>−0.1</code> (fuel and time; vaccines must stay cold), so shorter routes are better. Grey blocks are closed roads.</li>
     </ul>
     <h3>Q-learning</h3>
     <p>The agent keeps a table <code>Q(s,a)</code>: its estimate of the total future reward for taking action
@@ -46,8 +49,16 @@ export default {
     <p><strong>ε</strong> is the chance of taking a random action. With too little exploration the agent may
     never discover the goal, and with too much it never makes use of what it learned. The arrows show the
     current best action in each cell, which is the <strong>policy</strong>.</p>
+    <div class="real-life">
+      <h3>Real-life scenario</h3>
+      <p>In summer 2020 Greece deployed <strong>“Eva”</strong>, a reinforcement-learning system (a contextual bandit) that decided
+      which arriving travellers to test for COVID at the border. It balanced <em>exploring</em> under-sampled countries with
+      <em>exploiting</em> what it had learned about high-risk ones. A study in <em>Nature</em> (Bastani et al., 2021) estimated it
+      found nearly twice as many infected travellers as random testing would have. RL is also used for routing deliveries, managing
+      power grids and controlling robots.</p>
+    </div>
     <h3>Try this</h3>
-    <p>Press <strong>Train 200 episodes</strong> to fast-forward, then set ε to 0 and watch the agent follow its learned path.</p>
+    <p>Press <strong>Train 200 episodes</strong> to fast-forward, then set ε to 0 and watch the van follow its learned route.</p>
   `,
   create({ scene, ui }) {
     const rand = rng(91);
@@ -81,7 +92,7 @@ export default {
         tile.position.set(x, t === 'P' ? -0.15 : 0, z);
         scene.add(tile);
         if (t === 'G' || t === 'P') {
-          const s = textSprite(t === 'G' ? '+10' : '−10', { height: 0.38, color: t === 'G' ? '#ffd166' : '#fca5a5' });
+          const s = textSprite(t === 'G' ? 'Clinic +10' : 'Hotspot −10', { height: 0.3, color: t === 'G' ? '#ffd166' : '#fca5a5', background: 'rgba(2,6,23,0.6)' });
           s.position.set(x, 0.6, z);
           scene.add(s);
           continue;
