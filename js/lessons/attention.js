@@ -31,6 +31,8 @@ export default {
   category: 'Deep Learning',
   camera: { position: [0, 1.4, 20], target: [0, 0.4, 0] },
   formula: 'Attention(Q, K, V) = softmax(Q·Kᵀ / √d) · V<br>each token: qᵢ = W_Q·xᵢ,  kⱼ = W_K·xⱼ,  vⱼ = W_V·xⱼ',
+  goal: 'For every word, a <strong>set of weights summing to 100%</strong> that says how much it should draw on each other word, so “it” is understood as “the vaccine”.',
+  usage: 'In a trained Transformer, every new sentence is turned into queries, keys and values, the attention weights are computed on the fly, and the mixed representations feed the next layer, ending in a prediction such as the next word or a document label.',
   hint: 'Arcs show how much the highlighted word attends to every other word',
   info: `
     <h3>What it is</h3>

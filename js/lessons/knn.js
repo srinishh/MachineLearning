@@ -1,43 +1,47 @@
 import * as THREE from 'three';
-import { grid2D, sphereCloud, setInstance, setInstanceColor, commitInstances, textSprite, PALETTE, damp } from '../helpers.js';
-import { COUNTRIES, FIELDS, scaler, values, quantile } from '../data/covid.js';
+import { grid2D, textSprite, PALETTE, damp } from '../helpers.js';
+import { COUNTRIES, FIELDS, HIGH_MORTALITY, MEDIAN_DEATHS, TRAIN_IDX, TEST_IDX, scaler } from '../data/covid.js';
+import { splitPoints, SPLIT_LEGEND } from '../ml/split-points.js';
+import { predictor } from '../ml/predictor.js';
+import { pct } from '../ml/metrics.js';
 
-const RES = 120;
+const RES = 110;
 const HALF = 6;
 const S = 2.1; // display units per standard deviation
-const NAMES = ['low', 'medium', 'high'];
-const CLASS_COLORS = [PALETTE[0], PALETTE[2], PALETTE[1]];
+const NAMES = ['low', 'high'];
+const CLASS_COLORS = [PALETTE[0], PALETTE[1]];
 
 export default {
   id: 'knn',
   title: 'k-Nearest Neighbors',
   category: 'Supervised Learning',
   camera: { position: [0, -5, 17], target: [0, 0, 0] },
-  formula: 'ŷ(x) = majority vote of the k countries closest to x<br>distance = √(Δage² + Δlog cases²)   (standardised)',
-  hint: 'Click anywhere to place a hypothetical country and see its nearest neighbours',
+  formula: 'ŷ(x) = majority vote of the k training countries closest to x<br>distance = √(Δage² + Δlog cases²)   (standardised)',
+  goal: 'A <strong>class label</strong> (high or low mortality) for a new country, decided by a vote of the k most similar countries it has seen. There are no learned weights: the training data <em>is</em> the model.',
+  usage: 'Measure the new country\'s distance to every stored training country, take the k closest, and return the majority label. The vote share doubles as a confidence (e.g. 4 of 5 neighbours = 80%). Set values in “Use the trained model” or click the plane to place a country.',
+  hint: 'Click anywhere to place a hypothetical country · Spheres = training memory, cubes = test countries',
   info: `
     <h3>What it is</h3>
-    <p>k-NN is the simplest classifier there is. There's no training step. To label something new, find the <strong>k</strong>
-    most <strong>similar</strong> known examples and take a <strong>majority vote</strong>.</p>
+    <p>k-NN is the simplest classifier there is. There's no training step. To label something new, find the <strong>k</strong> most
+    <strong>similar</strong> known examples and take a <strong>majority vote</strong>.</p>
     <h3>On the COVID data</h3>
-    <p>Countries are split into three equal groups by deaths per million:
-    <span style="color:#4cc9f0">low</span>, <span style="color:#ffd166">medium</span> and <span style="color:#f72585">high</span>.
-    Each country is placed by <strong>median age</strong> (x) and <strong>cases per million</strong> (y, log), both standardised so
-    neither dominates the distance.</p>
+    <p>Countries are placed by <strong>median age</strong> (x) and <strong>cases per million</strong> (y, log), both standardised so
+    neither dominates the distance. The ${TRAIN_IDX.length} training countries form the model's memory. Each test country (cube) is
+    classified by its neighbours among them, which gives the test accuracy.</p>
     <ul>
-      <li>The white-ringed sphere is a <strong>query</strong>: a hypothetical country. Lines connect it to its k nearest real countries, and the panel names them.</li>
+      <li>The white-ringed sphere is a <strong>query</strong>: a hypothetical country. Lines connect it to its k nearest training countries.</li>
       <li>The tinted background is the <strong>decision map</strong>: the label k-NN would predict at every location.</li>
     </ul>
     <h3>Choosing k</h3>
     <ul>
-      <li><strong>k = 1</strong>: islands form around single unusual countries, which is overfitting.</li>
+      <li><strong>k = 1</strong>: islands form around single unusual countries, so training accuracy is perfect but the model overfits.</li>
       <li><strong>Large k</strong>: smooth regions, but small groups get outvoted, which is underfitting.</li>
     </ul>
     <div class="real-life">
       <h3>Real-life scenario</h3>
       <p>“Find the most similar cases” is everywhere. Health agencies compared their region with <strong>similar regions further
       along the epidemic</strong> to anticipate what was coming. Hospitals use patient-similarity search, and recommender systems
-      suggest products bought by similar customers. k-NN is also used to <strong>fill in missing values</strong>: a country with no
+      suggest products bought by similar customers. k-NN also <strong>fills in missing values</strong>: a country with no
       hospital-bed data can borrow the average of its nearest neighbours.</p>
     </div>
   `,
@@ -45,19 +49,16 @@ export default {
     scene.add(grid2D(HALF * 2, 12));
     const age = scaler('median_age');
     const cases = scaler('cases_pm');
-    const deaths = values('deaths_pm');
-    const t1 = quantile(deaths, 1 / 3);
-    const t2 = quantile(deaths, 2 / 3);
     const X = COUNTRIES.map((_, i) => [age.z[i] * S, cases.z[i] * S]);
-    const Y = deaths.map((d) => (d < t1 ? 0 : d < t2 ? 1 : 2));
+    const Y = HIGH_MORTALITY;
     const N = X.length;
     let k = 5;
     let auto = true;
     const query = [0, 0];
     const shownQuery = new THREE.Vector3();
 
-    const pts = sphereCloud(N, 0.13);
-    scene.add(pts);
+    const pts = splitPoints(N, 0.13);
+    scene.add(pts.group);
 
     const map = new Uint8Array(RES * RES * 4);
     const tex = new THREE.DataTexture(map, RES, RES);
@@ -98,26 +99,34 @@ export default {
     circle.computeLineDistances();
     scene.add(circle);
 
-    const queryStat = ui.stat('Hypothetical country', { wide: true });
-    const predStat = ui.stat('Predicted mortality');
-    const voteStat = ui.stat('Votes (low/med/high)');
+    const pipe = ui.pipeline([
+      ['Prepare data', `X = median age, log cases/M (standardised) · Y = high (≥ ${Math.round(MEDIAN_DEATHS)} deaths/M) or low`],
+      ['Split', `${TRAIN_IDX.length} train / ${TEST_IDX.length} test countries`],
+      ['Train & optimise', 'Nothing to optimise: just store the training countries (“lazy learning”)'],
+      ['Evaluate', ''],
+    ]);
+    const accStat = ui.stat('Accuracy train / test', { wide: true });
+    const queryStat = ui.stat('Query country', { wide: true });
+    const voteStat = ui.stat('Votes (low / high)');
+    const predStat = ui.stat('Prediction');
     const nbStat = ui.stat('Nearest neighbours', { wide: true });
 
+    // Neighbours among the training countries only (the model's memory).
     function neighbours(qx, qy, kk) {
-      const d = X.map((p, i) => [(p[0] - qx) ** 2 + (p[1] - qy) ** 2, i]);
+      const d = TRAIN_IDX.map((i) => [(X[i][0] - qx) ** 2 + (X[i][1] - qy) ** 2, i]);
       d.sort((a, b) => a[0] - b[0]);
       return d.slice(0, kk);
     }
 
     function vote(nb) {
-      const votes = [0, 0, 0];
+      const votes = [0, 0];
       // Tiny rank bonus breaks ties toward the nearest neighbours.
       nb.forEach(([, i], r) => { votes[Y[i]] += 1 + (nb.length - r) * 1e-6; });
-      return { cls: votes.indexOf(Math.max(...votes)), votes: votes.map(Math.floor) };
+      return { cls: votes[1] > votes[0] ? 1 : 0, votes: votes.map(Math.floor) };
     }
 
     const colors = CLASS_COLORS.map((c) => new THREE.Color(c));
-    function paintMap() {
+    function refit() {
       for (let j = 0; j < RES; j++) {
         for (let i = 0; i < RES; i++) {
           const x = -HALF + ((i + 0.5) / RES) * HALF * 2;
@@ -131,14 +140,30 @@ export default {
         }
       }
       tex.needsUpdate = true;
+      const accOn = (idx) => idx.filter((i) => vote(neighbours(X[i][0], X[i][1], k)).cls === Y[i]).length / idx.length;
+      const tr = accOn(TRAIN_IDX);
+      const te = accOn(TEST_IDX);
+      accStat(`${pct(tr)} / ${pct(te)}`);
+      pipe(3, `Test accuracy ${pct(te)} (train ${pct(tr)}) with k = ${k}`);
     }
 
-    X.forEach((_, i) => setInstanceColor(pts, i, CLASS_COLORS[Y[i]]));
+    X.forEach((p, i) => pts.set(i, p[0], p[1], 0, 1, CLASS_COLORS[Y[i]]));
+    pts.commit();
 
-    ui.slider({ label: 'k (neighbours)', min: 1, max: 15, step: 1, value: k, onInput: (v) => { k = v; paintMap(); } });
+    ui.section('Train');
+    ui.slider({ label: 'k (neighbours)', min: 1, max: 15, step: 1, value: k, onInput: (v) => { k = v; refit(); } });
     const autoToggle = ui.toggle({ label: 'Move query automatically', value: true, onChange: (v) => { auto = v; } });
     ui.toggle({ label: 'Show decision map', value: true, onChange: (v) => { bg.visible = v; } });
-    ui.html(`<div class="legend"><span style="--c:#4cc9f0">low &lt; ${Math.round(t1)}</span><span style="--c:#ffd166">medium</span><span style="--c:#f72585">high ≥ ${Math.round(t2)} deaths/M</span></div>`);
+    ui.html(SPLIT_LEGEND);
+    const use = predictor(ui, ['median_age', 'cases_pm'], {
+      onChange: () => {
+        const [a, c] = use.values();
+        query[0] = a * S;
+        query[1] = c * S;
+        auto = false;
+        autoToggle.set(false);
+      },
+    });
 
     onClick((ray) => {
       const hit = ray.intersectObject(bg)[0];
@@ -149,7 +174,7 @@ export default {
       autoToggle.set(false);
     });
 
-    paintMap();
+    refit();
     let t = 0;
     const qColor = new THREE.Color();
     const goal = new THREE.Vector3();
@@ -170,8 +195,8 @@ export default {
         const nb = neighbours(qx, qy, k);
         const { cls, votes } = vote(nb);
         const near = new Set(nb.map(([, i]) => i));
-        X.forEach((p, i) => setInstance(pts, i, p[0], p[1], 0, near.has(i) ? 1.5 : 1));
-        commitInstances(pts);
+        X.forEach((p, i) => pts.set(i, p[0], p[1], 0, near.has(i) ? 1.5 : 1));
+        pts.commit();
 
         linePos.fill(0);
         nb.forEach(([, i], r) => linePos.set([qx, qy, 0.02, X[i][0], X[i][1], 0.02], r * 6));
@@ -189,6 +214,8 @@ export default {
         predStat(NAMES[cls]);
         voteStat(votes.join(' / '));
         nbStat(nb.slice(0, 5).map(([, i]) => COUNTRIES[i].name).join(', ') + (nb.length > 5 ? '…' : ''));
+        const conf = Math.max(...votes) / k;
+        use.show(`${NAMES[cls].toUpperCase()} mortality (${votes[cls]} of ${k} neighbours, ${(conf * 100).toFixed(0)}%)${use.actual((c) => `${FIELDS.deaths_pm.fmt(c.deaths_pm)} deaths/M (${c.deaths_pm >= MEDIAN_DEATHS ? 'high' : 'low'})`)}`);
       },
     };
   },

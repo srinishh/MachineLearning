@@ -59,6 +59,8 @@ export default {
   category: 'Deep Learning',
   camera: { position: [0.2, -13, 14.5], target: [0.2, 0, 0] },
   formula: 'out[i, j] = Σₘ Σₙ input[i+m, j+n] · K[m, n]<br>ReLU(z) = max(0, z)',
+  goal: 'A <strong>feature map</strong> that lights up wherever a pattern appears. With real COVID data, it marks when each country\'s cases started rising or falling. Stacking many such maps lets a CNN recognise whole images.',
+  usage: 'In a trained CNN you pass a new image (an X-ray, or a grid like this one) through the learned kernels, and the final layer turns the feature maps into a label such as “pneumonia: yes/no”. Here you can apply each kernel to any input and read the response.',
   hint: 'The yellow window is the kernel sliding over the image · In the COVID image, rows are countries and columns are time',
   info: `
     <h3>What it is</h3>

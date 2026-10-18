@@ -4,7 +4,10 @@ import {
   unitCylinder, placeCylinder, PALETTE, damp,
   textSprite,
 } from '../helpers.js';
-import { COUNTRIES, FIELDS, scaler } from '../data/covid.js';
+import { COUNTRIES, FIELDS, TRAIN_IDX, TEST_IDX, IS_TEST, scaler } from '../data/covid.js';
+import { splitPoints, SPLIT_LEGEND } from '../ml/split-points.js';
+import { predictor } from '../ml/predictor.js';
+import { pct } from '../ml/metrics.js';
 
 const VAX_GOAL = 60; // % fully vaccinated
 const S = 2.1; // display units per standard deviation
@@ -19,7 +22,9 @@ export default {
   category: 'Supervised Learning',
   camera: { position: [0, -6, 17], target: [0, 0, 0] },
   formula: 'f(x) = w·x + b<br>minimise  ½λ‖w‖² + ¹⁄ₙ Σ max(0, 1 − yᵢ·f(xᵢ))<br>margin width = 2 / ‖w‖',
-  hint: 'Ringed countries are support vectors, the only ones that decide the boundary · Click a dot to name it',
+  goal: 'A <strong>yes/no answer</strong> (will this country reach 60% full vaccination?) from the side of a boundary line the point falls on. The line is placed to leave the <strong>widest possible margin</strong> between the classes. The trained model is a weight per feature plus a bias, defined by a few support vectors.',
+  usage: 'Compute the score <em>f(x) = w₁·life expectancy + w₂·HDI + b</em> for a new country. A positive score means “yes”, negative means “no”, and the size of the score is how far it sits from the boundary (confidence). Try it in “Use the trained model”.',
+  hint: 'Ringed countries are support vectors · Spheres = train, cubes = test · Click a point to name it',
   info: `
     <h3>What it is</h3>
     <p>Many lines can separate two classes. An SVM picks the one with the <strong>widest margin</strong>,
@@ -65,30 +70,34 @@ export default {
     let t = 0;
     let acc = 0;
 
-    const pts = sphereCloud(N, 0.14);
+    const pts = splitPoints(N, 0.14);
+    const marker = new THREE.Mesh(new THREE.OctahedronGeometry(0.3), new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.8 }));
     const rings = new THREE.InstancedMesh(new THREE.TorusGeometry(0.3, 0.035, 8, 32), new THREE.MeshBasicMaterial({ color: 0xffffff }), N);
     rings.frustumCulled = false;
     const boundary = unitCylinder(PALETTE[2], { emissive: 0.8 });
     const marginPos = unitCylinder(PALETTE[1], { emissive: 0.5, opacity: 0.6 });
     const marginNeg = unitCylinder(PALETTE[0], { emissive: 0.5, opacity: 0.6 });
     const street = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.06, depthWrite: false }));
-    linear.add(pts, rings, boundary, marginPos, marginNeg, street);
+    linear.add(pts.group, marker, rings, boundary, marginPos, marginNeg, street);
 
+    const pipe = ui.pipeline([
+      ['Prepare data', `X = life expectancy, HDI (standardised) · Y = +1 if ≥ ${VAX_GOAL}% fully vaccinated, else −1`],
+      ['Split', `${TRAIN_IDX.length} train / ${TEST_IDX.length} test countries`],
+      ['Train & optimise', 'Sub-gradient descent on hinge loss + λ‖w‖²'],
+      ['Evaluate', ''],
+    ]);
     const stats = {
       margin: ui.stat('Margin width'),
       sv: ui.stat('Support vectors'),
-      acc: ui.stat('Accuracy'),
+      acc: ui.stat('Accuracy train / test'),
       mode: ui.stat('Space'),
     };
 
     function newLinear() {
       X = COUNTRIES.map((_, i) => [LIFE.z[i] * S, HDI.z[i] * S]);
       Y = COUNTRIES.map((c) => (c.vax >= VAX_GOAL ? 1 : -1));
-      X.forEach((p, i) => {
-        setInstanceColor(pts, i, Y[i] > 0 ? PALETTE[1] : PALETTE[0]);
-        setInstance(pts, i, p[0], p[1], 0);
-      });
-      commitInstances(pts);
+      X.forEach((p, i) => pts.set(i, p[0], p[1], 0, 1, Y[i] > 0 ? PALETTE[1] : PALETTE[0]));
+      pts.commit();
       w = [0.1, 0];
       b = 0;
       t = 0;
@@ -111,9 +120,9 @@ export default {
     pickStat(`Pink = ≥ ${VAX_GOAL}% fully vaccinated · click a dot`);
     onClick((ray) => {
       if (mode !== 'linear') return;
-      const hit = ray.intersectObject(pts)[0];
-      if (hit?.instanceId === undefined) return;
-      const c = COUNTRIES[hit.instanceId];
+      const i = pts.pick(ray);
+      if (i < 0) return;
+      const c = COUNTRIES[i];
       pickStat(`${c.name}: life exp. ${FIELDS.life_exp.fmt(c.life_exp)}, HDI ${FIELDS.hdi.fmt(c.hdi)} → ${FIELDS.vax.fmt(c.vax)} fully vaccinated`);
     });
 
@@ -123,11 +132,12 @@ export default {
       let g0 = lambda * w[0];
       let g1 = lambda * w[1];
       let gb = 0;
-      for (let i = 0; i < N; i++) {
+      const n = TRAIN_IDX.length;
+      for (const i of TRAIN_IDX) {
         if (Y[i] * (w[0] * X[i][0] + w[1] * X[i][1] + b) < 1) {
-          g0 -= (Y[i] * X[i][0]) / N;
-          g1 -= (Y[i] * X[i][1]) / N;
-          gb -= Y[i] / N;
+          g0 -= (Y[i] * X[i][0]) / n;
+          g1 -= (Y[i] * X[i][1]) / n;
+          gb -= Y[i] / n;
         }
       }
       w[0] -= lr * g0;
@@ -185,6 +195,8 @@ export default {
       liftTarget = liftTarget ? 0 : 1;
       liftBtn.textContent = liftTarget ? 'Flatten to 2D' : 'Lift into 3D';
     }, { primary: true });
+    ui.html(SPLIT_LEGEND);
+    const use = predictor(ui, ['life_exp', 'hdi'], { title: 'Use the trained model (linear mode)' });
 
     newLinear();
     const p0 = new THREE.Vector3();
@@ -217,18 +229,27 @@ export default {
           street.scale.set(16, 2 / norm, 1);
 
           let sv = 0;
-          let correct = 0;
+          const correct = { train: 0, test: 0 };
           for (let i = 0; i < N; i++) {
             const m = Y[i] * (w[0] * X[i][0] + w[1] * X[i][1] + b);
-            if (m > 0) correct++;
-            const isSV = m <= 1.02;
+            if (m > 0) correct[IS_TEST[i] ? 'test' : 'train']++;
+            // Support vectors exist only among the training points.
+            const isSV = !IS_TEST[i] && m <= 1.02;
             if (isSV) sv++;
             setInstance(rings, i, X[i][0], X[i][1], 0, isSV ? 1 : 0);
           }
           rings.instanceMatrix.needsUpdate = true;
+          const trAcc = correct.train / TRAIN_IDX.length;
+          const teAcc = correct.test / TEST_IDX.length;
           stats.margin((2 / norm).toFixed(3));
           stats.sv(sv);
-          stats.acc(`${((100 * correct) / N).toFixed(0)}%`);
+          stats.acc(`${pct(trAcc)} / ${pct(teAcc)}`);
+          pipe(3, `Test accuracy ${pct(teAcc)} (train ${pct(trAcc)})`);
+          const [ql, qh] = use.values();
+          const score = w[0] * ql * S + w[1] * qh * S + b;
+          marker.position.set(ql * S, qh * S, 0.3);
+          marker.rotation.z += dt * 2;
+          use.show(`score f(x) = ${score.toFixed(2)} → ${score >= 0 ? 'YES, likely ≥' : 'NO, likely <'} ${VAX_GOAL}% vaccinated${use.actual((c) => FIELDS.vax.fmt(c.vax))}`);
           stats.mode('2D input space');
         } else {
           lift += (liftTarget - lift) * damp(3, dt);

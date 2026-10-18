@@ -451,3 +451,64 @@ input[type='range'] {
 .info a { color: var(--accent); }
 .extra .profiles { margin: 6px 0 0; padding-left: 0; list-style: none; font-size: 12.5px; color: #cbd5e1; }
 .extra .profiles li { margin-bottom: 6px; }
+
+/* ---------- Narration, goals, pipeline ---------- */
+.voice-btn { white-space: nowrap; }
+.voice-btn[aria-pressed='true'] { border-color: var(--accent-3); color: var(--accent-3); }
+.voice-btn.speaking { box-shadow: 0 0 0 3px rgba(255, 209, 102, 0.25); }
+
+.goal { display: flex; flex-direction: column; gap: 8px; }
+.goal:empty { display: none; }
+.goal-item { padding: 10px 12px; border-radius: 10px; background: rgba(6, 214, 160, 0.07); border: 1px solid rgba(6, 214, 160, 0.28); }
+.goal-item:nth-child(2) { background: rgba(155, 93, 229, 0.08); border-color: rgba(155, 93, 229, 0.35); }
+.goal-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-weight: 600; }
+.goal-item p { margin: 4px 0 0; font-size: 13.5px; color: #e2e8f0; }
+
+.section-title {
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent-3);
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.pipeline { list-style: none; margin: 0; padding: 0; counter-reset: step; display: flex; flex-direction: column; gap: 6px; }
+.pipeline li {
+  counter-increment: step;
+  position: relative;
+  padding: 7px 10px 7px 38px;
+  border-radius: 9px;
+  background: rgba(2, 6, 23, 0.45);
+  border: 1px solid var(--border);
+  font-size: 12.5px;
+  display: flex;
+  flex-direction: column;
+}
+.pipeline li::before {
+  content: counter(step);
+  position: absolute;
+  left: 10px;
+  top: 8px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #0f172a;
+  background: var(--accent);
+}
+.pipeline li.active { border-color: var(--accent); background: rgba(76, 201, 240, 0.1); }
+.pipeline li span { color: #cbd5e1; }
+
+@media (max-width: 860px) {
+  .voice-btn { font-size: 12px; padding: 6px 8px; }
+}
+.extra .tree-path { margin: 6px 0 0; padding-left: 20px; font-size: 12.5px; color: #cbd5e1; }
+.extra .tree-path li { margin-bottom: 3px; }
+.split-legend .shape-sphere, .split-legend .shape-cube { color: var(--muted); }
+.split-legend span::before { display: none; }

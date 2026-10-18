@@ -16,23 +16,39 @@ Each lesson explains the concept, shows how it applies to the COVID data, and in
 
 ## Lessons
 
+Every algorithm lesson shows **🎯 the output we want** from the model and **🛠 how to use the trained model**. Supervised
+lessons follow the same four-step pipeline (prepare data → split → train & optimise → evaluate) on one fixed 80/20 split:
+107 training countries (spheres) and 24 test countries (cubes). Each one reports test-set performance and has a
+**“Use the trained model”** panel: set feature values or load a real country and get the model's prediction.
+
 | # | Topic | Question asked of the COVID data | Real-life scenario |
 |---|-------|----------------------------------|--------------------|
-| 00 | Meet the Data | Guided tour of the dataset | – |
+| 00 | Meet the Data | Guided 10-step tour of the dataset | – |
 | 01 | What is Machine Learning? | Overview of learning types | – |
-| 02 | Linear Regression | Deaths per million vs. median age (or 65+, life expectancy, vaccination) | Public-health burden planning |
-| 03 | Gradient Descent | Descending the real loss surface of that regression, raw vs. standardised | How every model is trained; Adam |
-| 04 | Overfitting & Regularization | Polynomial fits to a country's 2020 case curve, with held-out weeks | The 2020 “cubic fit” forecast |
-| 05 | Logistic Regression | High vs. low mortality from median age and cases | ISARIC 4C mortality score |
-| 06 | k-Nearest Neighbors | Mortality tier of a hypothetical country from its most similar countries | Analogue forecasting, imputation |
-| 07 | Decision Trees | High mortality from median age and % vaccinated | CURB-65 triage rules |
-| 08 | Support Vector Machines | ≥ 60% vaccinated from life expectancy and HDI, plus the kernel trick | Medical classification with few samples |
-| 09 | k-Means Clustering | Grouping countries by cases, deaths and vaccination | COVID patient phenotypes |
-| 10 | PCA | Compressing age, life expectancy and GDP into a “development” axis | Vulnerability indices |
-| 11 | Neural Networks & Backprop | Predicting cases and deaths from age, GDP and vaccination (SGD) | ICU demand prediction |
-| 12 | CNNs | A wave detector sliding over a countries × time case heatmap | Chest X-ray models and their pitfalls |
-| 13 | Attention & Transformers | “The vaccine was tested on adults so it reduced deaths” | CORD-19 literature search |
-| 14 | Q-Learning | A vaccine-delivery van avoiding outbreak hotspots | Greece's “Eva” border-testing system |
+| 02 | Gradient Descent | Descending the real loss surface of the regression, raw vs. standardised | How every model is trained; Adam |
+| 03 | Overfitting & Regularization | Polynomial fits to a country's 2020 case curve, with held-out weeks | The 2020 “cubic fit” forecast |
+| 04 | How Supervised Learning Works | The four steps animated end to end (logistic regression) | Validating clinical models |
+| 05 | Linear Regression | Deaths per million vs. median age (or 65+, life expectancy, vaccination) | Public-health burden planning |
+| 06 | Logistic Regression | High vs. low mortality from median age and cases | ISARIC 4C mortality score |
+| 07 | Decision Trees | High mortality as a flowchart of yes/no questions | CURB-65 triage rules |
+| 08 | Random Forest | Many bootstrap trees voting on high mortality | ICU-risk models, fraud detection |
+| 09 | Support Vector Machines | ≥ 60% vaccinated from life expectancy and HDI, plus the kernel trick | Medical classification with few samples |
+| 10 | k-Nearest Neighbors | High mortality from the most similar training countries | Analogue forecasting, imputation |
+| 11 | Naive Bayes | Bayes' rule with per-class bell curves, shown as 3D hills | Spam filters, text triage |
+| 12 | Gradient Boosting (GBM/XGBoost) | Deaths per million built up tree by tree from residuals | XGBoost/LightGBM in production |
+| 13 | k-Means Clustering | Grouping countries by cases, deaths and vaccination | COVID patient phenotypes |
+| 14 | PCA | Compressing age, life expectancy and GDP into a “development” axis | Vulnerability indices |
+| 15 | Neural Networks & Backprop | Predicting cases and deaths from age, GDP and vaccination (SGD) | ICU demand prediction |
+| 16 | CNNs | A wave detector sliding over a countries × time case heatmap | Chest X-ray models and their pitfalls |
+| 17 | Attention & Transformers | “The vaccine was tested on adults so it reduced deaths” | CORD-19 literature search |
+| 18 | Q-Learning | A vaccine-delivery van avoiding outbreak hotspots | Greece's “Eva” border-testing system |
+
+## Voice narration
+
+Press **🔊 Narrate** in the top bar to have each lesson read aloud: its goal, the explanation, and how to use the model.
+Step-by-step lessons (Meet the Data, How Supervised Learning Works) narrate each step as you advance. Narration uses the
+browser's built-in speech synthesis (Web Speech API), so it works offline and nothing is sent to a server. Available voices
+depend on the browser and operating system.
 
 ## Rebuilding the data
 
@@ -75,6 +91,8 @@ js/helpers.js         Shared Three.js utilities (instanced points, labels, colou
 js/data/covid-data.js Generated COVID-19 dataset (do not edit by hand)
 js/data/covid.js      Dataset helpers: field labels, z-scoring, labels, quantiles
 scripts/              Data build script
+js/narrator.js        Voice narration (Web Speech API)
+js/ml/                Shared ML code: train/test point clouds, metrics, trees, predictor panel
 js/lessons/*.js       One file per lesson
 js/lessons/index.js   Lesson order shown in the sidebar
 ```

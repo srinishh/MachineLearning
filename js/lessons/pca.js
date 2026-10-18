@@ -55,6 +55,8 @@ export default {
   category: 'Unsupervised Learning',
   camera: { position: [11, 7, 13], target: [0, 0, 0] },
   formula: 'Σ = ¹⁄ₙ Σ (xᵢ − μ)(xᵢ − μ)ᵀ<br>Σ·vₖ = λₖ·vₖ<br>zᵢ = Vₖᵀ (xᵢ − μ)',
+  goal: 'A <strong>smaller set of new features</strong> (principal components) that keep most of the information. Here one “development score” (PC1) replaces three correlated indicators while keeping about 89% of the variance.',
+  usage: 'Standardise a new country\'s values with the same means and spreads, then take the dot product with PC1\'s loadings to get its score. That score can be used to rank countries, plotted, or passed to another model as a single feature.',
   hint: 'Each dot is a country · Arrows are principal components, scaled by the spread along each one · Click a dot to name it',
   info: `
     <h3>What it is</h3>

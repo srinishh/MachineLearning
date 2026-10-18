@@ -1,5 +1,6 @@
 // Shared access to the COVID-19 dataset used by every lesson.
 import { COUNTRIES, SERIES, DAILY, SOURCE } from './covid-data.js';
+import { rng } from '../helpers.js';
 
 export { COUNTRIES, SERIES, DAILY, SOURCE };
 
@@ -86,3 +87,10 @@ export const MEDIAN_DEATHS = median(values('deaths_pm'));
 export const HIGH_MORTALITY = COUNTRIES.map((c) => (c.deaths_pm >= MEDIAN_DEATHS ? 1 : 0));
 
 export const describe = (c, keys) => keys.map((k) => `${FIELDS[k].short} ${FIELDS[k].fmt(c[k])}`).join(' · ');
+
+// One fixed 80/20 train/test split shared by every supervised lesson, so test
+// scores are comparable across models.
+const splitRand = rng(5);
+export const IS_TEST = COUNTRIES.map(() => splitRand() < 0.2);
+export const TRAIN_IDX = COUNTRIES.map((_, i) => i).filter((i) => !IS_TEST[i]);
+export const TEST_IDX = COUNTRIES.map((_, i) => i).filter((i) => IS_TEST[i]);
