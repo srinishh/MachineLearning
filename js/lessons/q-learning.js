@@ -26,6 +26,8 @@ export default {
   category: 'Reinforcement Learning',
   camera: { position: [0, 11, 9.5], target: [0, 0, 0.4] },
   formula: 'Q(s,a) ← Q(s,a) + α·[ r + γ·maxₐ′ Q(s′,a′) − Q(s,a) ]<br>action = random with prob. ε, otherwise argmaxₐ Q(s,a)',
+  goal: 'A <strong>policy</strong>: the best move in every grid cell (the arrows), learned purely from rewards so the van reaches the clinic quickly and avoids hotspots.',
+  usage: 'After training, set ε to 0 and the agent simply looks up the action with the highest Q-value in its current cell. That lookup table is the trained model, used to drive the van from any starting point.',
   hint: 'The delivery van learns a route to the vaccine clinic · Tiles turn green as it learns which streets lead there',
   info: `
     <h3>What it is</h3>

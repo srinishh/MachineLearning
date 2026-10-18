@@ -60,6 +60,8 @@ export default {
   category: 'Foundations',
   camera: { position: [0, -2, 18], target: [0, 0, 0] },
   formula: 'cases(t) ≈ Σₖ wₖ·tᵏ  (k = 0…degree)<br>Loss = MSE + λ·Σ wₖ²   (ridge)',
+  goal: 'A curve that <strong>predicts weeks it has never seen</strong>, judged by test error rather than training error. The goal is the model complexity (degree and λ) at the bottom of the U-shaped test curve.',
+  usage: 'Choose the degree and regularization with the lowest <em>test</em> error, refit, then use the curve to estimate cases on new dates. Never trust a model only because it fits the training points perfectly.',
   hint: 'Cyan = weeks the model trains on · Pink = held-out weeks · Dashed = full 7-day average curve',
   info: `
     <h3>The core tension</h3>

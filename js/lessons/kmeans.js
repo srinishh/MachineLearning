@@ -14,6 +14,8 @@ export default {
   category: 'Unsupervised Learning',
   camera: { position: [12, 8, 14], target: [0, 0, 0] },
   formula: '1. Assign: cᵢ = argminⱼ ‖xᵢ − μⱼ‖²<br>2. Update: μⱼ = mean of points assigned to j<br>Inertia = Σ ‖xᵢ − μ_cᵢ‖²',
+  goal: 'A <strong>group number for every country</strong> (no labels needed) plus k centre points that summarise each group, such as “high cases, high deaths, well vaccinated”.',
+  usage: 'To place a new country, measure its distance to each centre and assign it to the nearest one. The cluster profiles describe what that group means, which is useful for comparing similar countries or targeting policies.',
   hint: 'Each dot is a country · Octahedra are cluster centres · Click a dot to see its cluster',
   info: `
     <h3>What it is</h3>

@@ -80,6 +80,8 @@ export default {
   category: 'Foundations',
   camera: { position: [9, 9, 11], target: [0, -0.5, 0] },
   formula: 'θ ← θ − η·∇L(θ)<br>Momentum:  v ← β·v − η·∇L(θ);  θ ← θ + v',
+  goal: 'The <strong>best parameter values</strong>, here the slope and intercept of the COVID regression line, found by repeatedly stepping downhill on the loss surface until the error stops falling.',
+  usage: 'Gradient descent is the training engine, not a model you query. Once it stops, you keep the final parameters (the ball\'s position) and plug them into the model. Every lesson that “trains” uses some version of this loop.',
   hint: 'Click anywhere on the surface to drop both balls there',
   info: `
     <h3>What it is</h3>
@@ -88,7 +90,7 @@ export default {
     the lowest point.</p>
     <h3>On the COVID data</h3>
     <p>The default surface is <strong>real</strong>: the loss of the <em>deaths per million ~ median age</em> regression from the
-    previous lesson, plotted over its two parameters (slope <code>w</code> across, intercept <code>b</code> deep). Each ball's
+    Linear Regression lesson, plotted over its two parameters (slope <code>w</code> across, intercept <code>b</code> deep). Each ball's
     position is a candidate line through the countries.</p>
     <ul>
       <li><strong>Raw feature</strong> (age in decades): the valley is long and narrow. Plain gradient descent zig-zags across it and crawls along it.</li>

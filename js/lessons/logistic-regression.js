@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import {
-  floorGrid, sphereCloud, setInstance, setInstanceColor, commitInstances,
-  unitCylinder, placeCylinder, textSprite, PALETTE,
-} from '../helpers.js';
-import { COUNTRIES, FIELDS, HIGH_MORTALITY, MEDIAN_DEATHS, scaler } from '../data/covid.js';
+import { floorGrid, unitCylinder, placeCylinder, textSprite, PALETTE } from '../helpers.js';
+import { COUNTRIES, FIELDS, HIGH_MORTALITY, MEDIAN_DEATHS, TRAIN_IDX, TEST_IDX, scaler } from '../data/covid.js';
+import { splitPoints, SPLIT_LEGEND } from '../ml/split-points.js';
+import { predictor } from '../ml/predictor.js';
+import { pct } from '../ml/metrics.js';
 
 const H = 4; // display height of probability 1
 const S = 2.2; // display units per standard deviation
@@ -16,7 +16,9 @@ export default {
   category: 'Supervised Learning',
   camera: { position: [10, 8, 12], target: [0, 1.6, 0] },
   formula: 'P(high mortality) = σ(w₁·age + w₂·log cases + b)<br>σ(z) = 1 / (1 + e⁻ᶻ)<br>Loss = −Σ [y·log p + (1−y)·log(1−p)]',
-  hint: 'Height of the sheet = predicted probability that a country has high COVID mortality · Click a dot to inspect it',
+  goal: 'A <strong>probability between 0 and 1</strong> that a country is in the high-mortality half, which becomes a yes/no label by cutting at 0.5. The trained model is three numbers: one weight per feature plus a bias.',
+  usage: 'For a new country, compute <em>σ(w₁·age + w₂·log cases + b)</em> to get its risk. Below 0.5 means “low”, above means “high”. Move the sliders in “Use the trained model” or load a test country and watch the white marker ride the probability sheet.',
+  hint: 'Sheet height = predicted probability of high mortality · Spheres = train, cubes = test · Click a point to inspect it',
   info: `
     <h3>What it is</h3>
     <p>Logistic regression is the basic <strong>classification</strong> model. It takes a weighted sum of the inputs, as linear
@@ -31,8 +33,8 @@ export default {
       <li>The sheet is the model's probability everywhere. The yellow line is the <strong>decision boundary</strong> (p = 0.5).</li>
       <li>Misclassified countries are drawn <strong>larger</strong>. Click them to see who the model gets wrong.</li>
     </ul>
-    <p>Both learned weights end up positive: older populations and more infections both push the probability up. The model gets
-    roughly 85–87% of countries right.</p>
+    <p>Both learned weights end up positive: older populations and more infections both push the probability up. The model is
+    trained only on the spheres. On the unseen test cubes it gets roughly 4 out of 5 countries right.</p>
     <div class="real-life">
       <h3>Real-life scenario</h3>
       <p>Hospitals used logistic-regression risk scores to triage COVID patients. The UK's <strong>ISARIC 4C Mortality Score</strong>
@@ -53,8 +55,10 @@ export default {
     let epoch = 0;
     let acc = 0;
 
-    const pts = sphereCloud(N, 0.13);
-    scene.add(pts);
+    const pts = splitPoints(N, 0.13);
+    scene.add(pts.group);
+    const marker = new THREE.Mesh(new THREE.OctahedronGeometry(0.32), new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.8 }));
+    scene.add(marker);
 
     const sheetGeo = new THREE.PlaneGeometry(12, 12, 60, 60);
     sheetGeo.rotateX(-Math.PI / 2);
@@ -80,10 +84,16 @@ export default {
     tick('Cases per million (log) →', 7.4, 0.6, -3.5, '#e2e8f0', 0.36);
     tick('p = 1 (high mortality)', -6, H + 0.4, -6, '#f72585', 0.34);
 
+    const pipe = ui.pipeline([
+      ['Prepare data', `X = median age, log cases/M · Y = high (≥ ${Math.round(MEDIAN_DEATHS)} deaths/M) or low`],
+      ['Split', `${TRAIN_IDX.length} train / ${TEST_IDX.length} test countries`],
+      ['Train & optimise', 'Gradient descent on cross-entropy loss'],
+      ['Evaluate', ''],
+    ]);
     const stats = {
       epoch: ui.stat('Epoch'),
-      loss: ui.stat('Cross-entropy'),
-      acc: ui.stat('Accuracy'),
+      loss: ui.stat('Cross-entropy (train)'),
+      acc: ui.stat('Accuracy train / test'),
       w: ui.stat('w_age, w_cases, b'),
       pick: ui.stat('Selected country', { wide: true }),
     };
@@ -98,25 +108,27 @@ export default {
       let g1 = 0;
       let g2 = 0;
       let gb = 0;
-      for (let i = 0; i < N; i++) {
+      for (const i of TRAIN_IDX) {
         const e = sigmoid(w1 * X[i][0] + w2 * X[i][1] + b) - Y[i];
         g1 += e * X[i][0];
         g2 += e * X[i][1];
         gb += e;
       }
-      w1 -= (lr * g1) / N;
-      w2 -= (lr * g2) / N;
-      b -= (lr * gb) / N;
+      const n = TRAIN_IDX.length;
+      w1 -= (lr * g1) / n;
+      w2 -= (lr * g2) / n;
+      b -= (lr * gb) / n;
       epoch++;
     }
 
     ui.slider({ label: 'Learning rate η', min: 0.01, max: 2, step: 0.01, value: lr, format: (v) => v.toFixed(2), onInput: (v) => { lr = v; } });
     ui.button('Restart training', restart, { primary: true });
+    ui.html(SPLIT_LEGEND);
+    const use = predictor(ui, ['median_age', 'cases_pm']);
 
     onClick((ray) => {
-      const hit = ray.intersectObject(pts)[0];
-      if (hit?.instanceId === undefined) return;
-      const i = hit.instanceId;
+      const i = pts.pick(ray);
+      if (i < 0) return;
       const c = COUNTRIES[i];
       const p = sigmoid(w1 * X[i][0] + w2 * X[i][1] + b);
       stats.pick(`${c.name}: age ${FIELDS.median_age.fmt(c.median_age)}, ${FIELDS.cases_pm.fmt(c.cases_pm)} cases/M → P(high) = ${(p * 100).toFixed(0)}% · actual ${FIELDS.deaths_pm.fmt(c.deaths_pm)} deaths/M (${Y[i] ? 'high' : 'low'})`);
@@ -147,16 +159,22 @@ export default {
         sheetGeo.attributes.color.needsUpdate = true;
 
         let loss = 0;
-        let correct = 0;
+        const correct = { train: 0, test: 0 };
+        const isTest = new Set(TEST_IDX);
         for (let i = 0; i < N; i++) {
           const p = sigmoid(w1 * X[i][0] + w2 * X[i][1] + b);
-          loss -= Y[i] ? Math.log(p + 1e-9) : Math.log(1 - p + 1e-9);
+          if (!isTest.has(i)) loss -= Y[i] ? Math.log(p + 1e-9) : Math.log(1 - p + 1e-9);
           const ok = (p > 0.5 ? 1 : 0) === Y[i];
-          if (ok) correct++;
-          setInstance(pts, i, X[i][0] * S, Y[i] * H, X[i][1] * S, ok ? 1 : 1.7);
-          setInstanceColor(pts, i, Y[i] ? PALETTE[1] : PALETTE[0]);
+          if (ok) correct[isTest.has(i) ? 'test' : 'train']++;
+          pts.set(i, X[i][0] * S, Y[i] * H, X[i][1] * S, ok ? 1 : 1.7, Y[i] ? PALETTE[1] : PALETTE[0]);
         }
-        commitInstances(pts);
+        pts.commit();
+
+        const [qa, qc] = use.values();
+        const qp = sigmoid(w1 * qa + w2 * qc + b);
+        marker.position.set(qa * S, qp * H + 0.35, qc * S);
+        marker.rotation.y += dt * 2;
+        use.show(`P(high mortality) = ${(qp * 100).toFixed(0)}% → ${qp >= 0.5 ? 'HIGH' : 'LOW'}${use.actual((c) => `${FIELDS.deaths_pm.fmt(c.deaths_pm)} deaths/M (${c.deaths_pm >= MEDIAN_DEATHS ? 'high' : 'low'})`)}`);
 
         const norm = Math.hypot(w1, w2);
         boundary.visible = norm > 1e-3;
@@ -171,8 +189,11 @@ export default {
         }
 
         stats.epoch(epoch);
-        stats.loss((loss / N).toFixed(4));
-        stats.acc(`${((100 * correct) / N).toFixed(1)}%`);
+        const trAcc = correct.train / TRAIN_IDX.length;
+        const teAcc = correct.test / TEST_IDX.length;
+        stats.loss((loss / TRAIN_IDX.length).toFixed(4));
+        stats.acc(`${pct(trAcc)} / ${pct(teAcc)}`);
+        pipe(3, `Test accuracy ${pct(teAcc)} on ${TEST_IDX.length} unseen countries (train ${pct(trAcc)})`);
         stats.w(`${w1.toFixed(2)}, ${w2.toFixed(2)}, ${b.toFixed(2)}`);
       },
     };

@@ -68,10 +68,10 @@ const _q = new THREE.Quaternion();
 const _s = new THREE.Vector3();
 const _c = new THREE.Color();
 
-// Many spheres in one draw call; position/colour/scale them with setInstance*.
-export function sphereCloud(count, radius = 0.15, { segments = 16, emissive = 0.15 } = {}) {
+// Many copies of one shape in one draw call; position/colour/scale them with setInstance*.
+export function instancedCloud(geometry, count, { emissive = 0.15 } = {}) {
   const mesh = new THREE.InstancedMesh(
-    new THREE.SphereGeometry(radius, segments, Math.max(8, Math.floor(segments * 0.75))),
+    geometry,
     new THREE.MeshStandardMaterial({ roughness: 0.35, metalness: 0.1, emissive: 0xffffff, emissiveIntensity: emissive }),
     count,
   );
@@ -83,6 +83,12 @@ export function sphereCloud(count, radius = 0.15, { segments = 16, emissive = 0.
   }
   return mesh;
 }
+
+export const sphereCloud = (count, radius = 0.15, { segments = 16, emissive = 0.15 } = {}) =>
+  instancedCloud(new THREE.SphereGeometry(radius, segments, Math.max(8, Math.floor(segments * 0.75))), count, { emissive });
+
+export const boxCloud = (count, size = 0.25, { emissive = 0.15 } = {}) =>
+  instancedCloud(new THREE.BoxGeometry(size, size, size), count, { emissive });
 
 export function setInstance(mesh, i, x, y, z, scale = 1) {
   _p.set(x, y, z);

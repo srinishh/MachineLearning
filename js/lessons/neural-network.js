@@ -27,6 +27,8 @@ export default {
   category: 'Deep Learning',
   camera: { position: [-0.2, 0.3, 23.5], target: [-0.2, 0, 0] },
   formula: 'Forward:  aˡ = tanh(Wˡ·aˡ⁻¹ + bˡ)<br>Backward: δᴸ = (a − y)⊙(1 − a²);  δˡ = (Wˡ⁺¹)ᵀδˡ⁺¹ ⊙ (1 − (aˡ)²)<br>Update:  Wˡ ← Wˡ − η·δˡ(aˡ⁻¹)ᵀ',
+  goal: '<strong>Two numbers at once</strong>: a country\'s predicted cases and deaths per million, produced by layers of weighted sums and tanh activations whose weights were learned by backpropagation.',
+  usage: 'Feed the new country\'s standardised age, GDP and vaccination into the input layer and run one forward pass; the output neurons are the predictions (convert back from standardised log units). Press “Train 500 steps” first so the weights are trained.',
   hint: 'Blue/pink pulses = signals moving forward · Orange pulses = error flowing backward · One country per training step',
   info: `
     <h3>What it is</h3>

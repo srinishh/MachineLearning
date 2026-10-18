@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { lessons } from './lessons/index.js';
 import { addLights, disposeObject, smoothstep } from './helpers.js';
+import { narrator, speakable } from './narrator.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -109,7 +110,10 @@ function createUI(controlsEl, statsEl) {
       sync();
       field.append(input);
       controlsEl.append(field);
-      return { set(v) { input.value = v; sync(); } };
+      return {
+        set(v) { input.value = v; sync(); },
+        setRange(min, max, step = input.step) { Object.assign(input, { min, max, step }); sync(); },
+      };
     },
 
     select({ label, options, value, onChange }) {
@@ -153,6 +157,26 @@ function createUI(controlsEl, statsEl) {
         const s = String(text);
         if (s !== last) value.textContent = last = s;
       };
+    },
+
+    // Heading that groups the controls below it.
+    section(title) {
+      const el = document.createElement('div');
+      el.className = 'section-title';
+      el.textContent = title;
+      controlsEl.append(el);
+      return el;
+    },
+
+    // Numbered workflow card (e.g. the four supervised-learning steps).
+    // Returns a setter that updates one step's detail text.
+    pipeline(steps) {
+      const el = document.createElement('ol');
+      el.className = 'pipeline';
+      el.innerHTML = steps.map(([title, text]) => `<li><strong>${title}</strong><span>${text}</span></li>`).join('');
+      controlsEl.append(el);
+      const spans = el.querySelectorAll('li > span');
+      return (i, text) => { if (spans[i].innerHTML !== text) spans[i].innerHTML = text; };
     },
 
     // Free-form block (tables, small charts) placed under the controls.
@@ -229,6 +253,10 @@ function load(lesson) {
   $('#lesson-title').textContent = lesson.title;
   $('#lesson-category').textContent = lesson.category;
   $('#lesson-formula').innerHTML = lesson.formula ?? '';
+  $('#lesson-goal').innerHTML = [
+    lesson.goal && `<div class="goal-item"><div class="goal-label">🎯 Output we want</div><p>${lesson.goal}</p></div>`,
+    lesson.usage && `<div class="goal-item"><div class="goal-label">🛠 Using the trained model</div><p>${lesson.usage}</p></div>`,
+  ].filter(Boolean).join('');
   $('#lesson-info').innerHTML = lesson.info ?? '';
   $('#hint').textContent = lesson.hint ?? '';
   const controlsEl = $('#lesson-controls');
@@ -251,9 +279,22 @@ function load(lesson) {
     ui: createUI(controlsEl, statsEl),
     setCamera,
     flyTo,
+    narrate: (text) => narrator.speak(text),
     onClick: (fn) => { clickHandler = fn; },
   };
   active = { lesson, instance: lesson.create(ctx) ?? {} };
+  // Step-based lessons narrate their own steps via ctx.narrate().
+  if (lesson.narrateOnLoad !== false) narrator.speak(lessonScript(lesson));
+}
+
+// What the narrator reads for a lesson: title, goal, explanation, then usage.
+function lessonScript(lesson) {
+  return [
+    `${lesson.title}.`,
+    lesson.goal && `The output we want: ${speakable(lesson.goal)}`,
+    speakable(lesson.info ?? ''),
+    lesson.usage && `Using the trained model: ${speakable(lesson.usage)}`,
+  ].filter(Boolean).join(' ');
 }
 
 function route() {
@@ -287,6 +328,20 @@ $('#speed').addEventListener('input', (e) => {
 $('#cam-btn').addEventListener('click', () => {
   const cam = active.lesson.camera ?? {};
   setCamera(cam.position ?? [0, 0, 16], cam.target ?? [0, 0, 0]);
+});
+
+const voiceBtn = $('#voice-btn');
+if (!narrator.supported) {
+  voiceBtn.disabled = true;
+  voiceBtn.title = 'Speech synthesis is not available in this browser';
+}
+narrator.onChange = (speaking) => voiceBtn.classList.toggle('speaking', speaking);
+voiceBtn.addEventListener('click', () => {
+  narrator.enabled = !narrator.enabled;
+  voiceBtn.setAttribute('aria-pressed', String(narrator.enabled));
+  voiceBtn.textContent = narrator.enabled ? '🔇 Stop narration' : '🔊 Narrate';
+  if (narrator.enabled) narrator.speak(active.instance.script?.() ?? lessonScript(active.lesson));
+  else narrator.stop();
 });
 
 $('#prev-btn').addEventListener('click', () => step(-1));
