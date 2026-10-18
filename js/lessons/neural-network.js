@@ -1,14 +1,21 @@
 import * as THREE from 'three';
-import { rng, gauss, textSprite, placeCylinder, PALETTE, clamp } from '../helpers.js';
+import { rng, gauss, textSprite, clearGroup, placeCylinder, PALETTE, clamp } from '../helpers.js';
+import { COUNTRIES, FIELDS, scaler } from '../data/covid.js';
 
 const SIZES = [3, 5, 5, 2];
-const DUR = 0.8;
+const DUR = 0.7;
 const PHASES = [
   { type: 'fwd', l: 0 }, { type: 'fwd', l: 1 }, { type: 'fwd', l: 2 },
   { type: 'bwd', l: 2 }, { type: 'bwd', l: 1 }, { type: 'bwd', l: 0 },
   { type: 'update' },
 ];
 const NAMES = ['Input', 'Hidden 1', 'Hidden 2', 'Output'];
+const IN_FEATS = ['median_age', 'gdp', 'vax'];
+const IN_LABELS = ['Median age', 'GDP (log)', 'Vaccinated'];
+const OUT_FEATS = ['cases_pm', 'deaths_pm'];
+const OUT_LABELS = ['Cases/M', 'Deaths/M'];
+const IN_SCALE = 2.5; // inputs: z / 2.5, clamped to [-1, 1]
+const OUT_SCALE = 3; // targets: z / 3, clamped to [-0.9, 0.9] (inside tanh's range)
 const POS = new THREE.Color(PALETTE[0]);
 const NEG = new THREE.Color(PALETTE[1]);
 const GRAD = new THREE.Color(PALETTE[5]);
@@ -18,40 +25,55 @@ export default {
   id: 'neural-network',
   title: 'Neural Networks & Backprop',
   category: 'Deep Learning',
-  camera: { position: [0.9, 0.5, 21], target: [0.9, 0, 0] },
+  camera: { position: [-0.2, 0.3, 23.5], target: [-0.2, 0, 0] },
   formula: 'Forward:  aˡ = tanh(Wˡ·aˡ⁻¹ + bˡ)<br>Backward: δᴸ = (a − y)⊙(1 − a²);  δˡ = (Wˡ⁺¹)ᵀδˡ⁺¹ ⊙ (1 − (aˡ)²)<br>Update:  Wˡ ← Wˡ − η·δˡ(aˡ⁻¹)ᵀ',
-  hint: 'Blue/pink pulses = signals moving forward · Orange pulses = error flowing backward',
+  hint: 'Blue/pink pulses = signals moving forward · Orange pulses = error flowing backward · One country per training step',
   info: `
     <h3>What it is</h3>
-    <p>A neural network is layers of simple units (<strong>neurons</strong>). Each one computes a weighted
-    sum of its inputs, adds a bias, and applies a non-linear <strong>activation function</strong> (here
-    <code>tanh</code>). Stacking layers lets the network represent very complex functions.</p>
-    <h3>Forward pass</h3>
-    <p>Inputs flow left to right. Cyan edges are positive weights, pink are negative, and thicker means
-    stronger. A neuron's brightness shows how strongly it activates.</p>
-    <h3>Backpropagation</h3>
-    <p>After the forward pass we compare the output with the <strong>target</strong> and measure the error.
-    <strong>Backprop</strong> then sends that error backwards (the orange pulses), using the chain rule to
-    work out how much each weight contributed. Each weight is then nudged to reduce the error. That nudge is
-    gradient descent again.</p>
-    <h3>Watch it learn</h3>
-    <p>Every cycle is one training step on the same example, so the <strong>loss</strong> drops cycle by cycle
-    and the outputs move toward the target. Press <strong>New sample</strong> to give it a new task.</p>
+    <p>A neural network is layers of simple units (<strong>neurons</strong>). Each one computes a weighted sum of its inputs, adds a
+    bias, and applies a non-linear <strong>activation function</strong> (here <code>tanh</code>). Stacking layers lets the network
+    represent complex relationships that a single line can't.</p>
+    <h3>On the COVID data</h3>
+    <p>This small network takes three facts about a country (<strong>median age</strong>, <strong>GDP per capita</strong> and
+    <strong>% vaccinated</strong>) and predicts two outcomes at once: <strong>cases per million</strong> and <strong>deaths per
+    million</strong> (both log scale and standardised). Each cycle shows one country flowing through the network, then
+    <strong>backpropagation</strong> nudges every weight to reduce that country's error. This is <strong>stochastic gradient
+    descent</strong>: one example at a time, many times over.</p>
+    <h3>Reading the animation</h3>
+    <ul>
+      <li>Cyan edges are positive weights, pink are negative, and thicker means stronger. Neuron brightness shows activation.</li>
+      <li>Orange pulses carry the error backwards. The chain rule tells each weight how much it contributed.</li>
+      <li>Watch <strong>dataset loss</strong> fall over many steps. It is the error averaged over all countries, not just the current one.</li>
+    </ul>
+    <div class="real-life">
+      <h3>Real-life scenario</h3>
+      <p>Hospitals trained neural networks on vital signs and lab results to predict which COVID patients would need ICU care or
+      oxygen in the next 24–48 hours, giving staff time to prepare beds and ventilators. Similar networks forecast regional hospital
+      demand from case counts, mobility and vaccination data.</p>
+    </div>
   `,
   create({ scene, ui }) {
     const rand = rng(81);
     const nodePos = SIZES.map((n, l) => Array.from({ length: n }, (_, i) => new THREE.Vector3(-6 + l * 4, ((n - 1) / 2 - i) * 1.5, 0)));
 
+    const inScalers = IN_FEATS.map((f) => scaler(f));
+    const outScalers = OUT_FEATS.map((f) => scaler(f, { log: true }));
+    const INPUTS = COUNTRIES.map((_, i) => inScalers.map((s) => clamp(s.z[i] / IN_SCALE, -1, 1)));
+    const TARGETS = COUNTRIES.map((_, i) => outScalers.map((s) => clamp(s.z[i] / OUT_SCALE, -0.9, 0.9)));
+    const toReal = (v, j) => outScalers[j].fromZ(v * OUT_SCALE);
+
     let W = [];
     let B = [];
-    let input = [];
-    let target = [];
+    let sample = 0;
+    let input = INPUTS[0];
+    let target = TARGETS[0];
     let acts = [];
     let deltas = [];
-    let lr = 0.5;
+    let lr = 0.15;
     let cycle = 0;
     let pi = 0;
     let timer = 0;
+    let startLoss = 0;
     const shown = SIZES.map(() => null);
     const flash = SIZES.map(() => 0);
 
@@ -79,21 +101,63 @@ export default {
     pulses.frustumCulled = false;
     scene.add(pulses);
 
-    NAMES.forEach((name, l) => {
-      const s = textSprite(name, { height: 0.42, color: '#94a3b8' });
-      s.position.set(-6 + l * 4, nodePos[l][0].y + 1.05, 0);
+    const label = (text, pos, opts) => {
+      const s = textSprite(text, { height: 0.36, color: '#94a3b8', ...opts });
+      s.position.copy(pos);
       scene.add(s);
-    });
-    const targetLabels = new THREE.Group();
-    scene.add(targetLabels);
+    };
+    NAMES.forEach((name, l) => label(name, new THREE.Vector3(-6 + l * 4, nodePos[l][0].y + 1.05, 0), { height: 0.42 }));
+    IN_LABELS.forEach((t, i) => label(t, nodePos[0][i].clone().add(new THREE.Vector3(-1.75, 0, 0)), { color: '#e2e8f0' }));
+    OUT_LABELS.forEach((t, j) => label(t, nodePos[3][j].clone().add(new THREE.Vector3(1.4, 0.45, 0)), { color: '#e2e8f0' }));
+    const valueLabels = new THREE.Group();
+    scene.add(valueLabels);
 
     const stats = {
+      country: ui.stat('Training on', { wide: true }),
+      pred: ui.stat('Prediction vs actual', { wide: true }),
+      loss: ui.stat('Dataset loss (all countries)', { wide: true }),
       cycle: ui.stat('Training step'),
-      loss: ui.stat('Loss'),
-      out: ui.stat('Output', { wide: true }),
-      tgt: ui.stat('Target', { wide: true }),
-      phase: ui.stat('Phase', { wide: true }),
+      phase: ui.stat('Phase'),
     };
+
+    function forward(x) {
+      const a = [x];
+      for (let l = 0; l < W.length; l++) {
+        a.push(W[l].map((row, j) => Math.tanh(row.reduce((s, w, i) => s + w * a[l][i], B[l][j]))));
+      }
+      return a;
+    }
+
+    const datasetLoss = () => INPUTS.reduce((s, x, i) => {
+      const out = forward(x)[SIZES.length - 1];
+      return s + 0.5 * out.reduce((t, o, j) => t + (o - TARGETS[i][j]) ** 2, 0);
+    }, 0) / INPUTS.length;
+
+    function compute() {
+      if (!W.length) return;
+      acts = forward(input);
+      const L = SIZES.length - 1;
+      deltas = new Array(SIZES.length);
+      deltas[L] = acts[L].map((a, j) => (a - target[j]) * (1 - a * a));
+      for (let l = L - 1; l >= 1; l--) {
+        deltas[l] = acts[l].map((a, i) => W[l].reduce((s, row, j) => s + row[i] * deltas[l + 1][j], 0) * (1 - a * a));
+      }
+    }
+
+    function pickCountry() {
+      sample = Math.floor(rand() * COUNTRIES.length);
+      input = INPUTS[sample];
+      target = TARGETS[sample];
+      compute();
+      const c = COUNTRIES[sample];
+      stats.country(`${c.name}: ${IN_FEATS.map((f) => `${FIELDS[f].short} ${FIELDS[f].fmt(c[f])}`).join(' · ')}`);
+      clearGroup(valueLabels);
+      OUT_FEATS.forEach((f, j) => {
+        const s = textSprite(`actual ${FIELDS[f].fmt(c[f])}`, { height: 0.32, color: '#ffd166', background: 'rgba(2,6,23,0.7)' });
+        s.position.copy(nodePos[3][j]).add(new THREE.Vector3(1.6, -0.3, 0));
+        valueLabels.add(s);
+      });
+    }
 
     function initWeights() {
       W = [];
@@ -103,44 +167,11 @@ export default {
         B.push(Array.from({ length: SIZES[l + 1] }, () => gauss(rand) * 0.1));
       }
       cycle = 0;
+      startLoss = datasetLoss();
       compute();
       styleEdges();
       restartCycle();
     }
-
-    function newSample() {
-      input = Array.from({ length: SIZES[0] }, () => +(rand() * 2 - 1).toFixed(2));
-      target = Array.from({ length: SIZES[3] }, () => +(rand() * 1.6 - 0.8).toFixed(2));
-      for (const c of [...targetLabels.children]) {
-        targetLabels.remove(c);
-        c.material.map.dispose();
-        c.material.dispose();
-      }
-      target.forEach((t, j) => {
-        const s = textSprite(`target ${t.toFixed(2)}`, { height: 0.34, color: '#ffd166', background: 'rgba(2,6,23,0.7)' });
-        s.position.copy(nodePos[3][j]).add(new THREE.Vector3(1.75, 0, 0));
-        targetLabels.add(s);
-      });
-      cycle = 0;
-      compute();
-      restartCycle();
-    }
-
-    function compute() {
-      if (!W.length) return;
-      acts = [input];
-      for (let l = 0; l < W.length; l++) {
-        acts.push(W[l].map((row, j) => Math.tanh(row.reduce((s, w, i) => s + w * acts[l][i], B[l][j]))));
-      }
-      const L = SIZES.length - 1;
-      deltas = new Array(SIZES.length);
-      deltas[L] = acts[L].map((a, j) => (a - target[j]) * (1 - a * a));
-      for (let l = L - 1; l >= 1; l--) {
-        deltas[l] = acts[l].map((a, i) => W[l].reduce((s, row, j) => s + row[i] * deltas[l + 1][j], 0) * (1 - a * a));
-      }
-    }
-
-    const loss = () => 0.5 * acts[SIZES.length - 1].reduce((s, a, j) => s + (a - target[j]) ** 2, 0);
 
     function applyUpdate() {
       for (let l = 0; l < W.length; l++) {
@@ -150,7 +181,6 @@ export default {
         }
       }
       cycle++;
-      compute();
       styleEdges();
     }
 
@@ -173,8 +203,21 @@ export default {
       shown[0] = input;
     }
 
-    ui.slider({ label: 'Learning rate η', min: 0.05, max: 1.5, step: 0.05, value: lr, format: (v) => v.toFixed(2), onInput: (v) => { lr = v; } });
-    ui.button('New sample', newSample, { primary: true });
+    function trainFast(n) {
+      for (let s = 0; s < n; s++) {
+        sample = Math.floor(rand() * COUNTRIES.length);
+        input = INPUTS[sample];
+        target = TARGETS[sample];
+        compute();
+        applyUpdate();
+      }
+      lossShown = datasetLoss();
+      pickCountry();
+      restartCycle();
+    }
+
+    ui.slider({ label: 'Learning rate η', min: 0.01, max: 1, step: 0.01, value: lr, format: (v) => v.toFixed(2), onInput: (v) => { lr = v; } });
+    ui.button('Train 500 steps instantly', () => trainFast(500), { primary: true });
     ui.button('Re-initialise weights', initWeights);
     ui.html(`<div class="legend"><span style="--c:#4cc9f0">positive</span><span style="--c:#f72585">negative</span><span style="--c:#ff8c42">gradient</span></div>`);
 
@@ -182,8 +225,11 @@ export default {
     const mtx = new THREE.Matrix4();
     const col = new THREE.Color();
 
-    newSample();
+    let lossShown = 0;
     initWeights();
+    lossShown = startLoss;
+    pickCountry();
+    restartCycle();
 
     return {
       update(dt) {
@@ -225,6 +271,8 @@ export default {
           if (ph.type === 'bwd') flash[ph.l] = 1;
           if (ph.type === 'update') {
             applyUpdate();
+            lossShown = datasetLoss();
+            pickCountry();
             restartCycle();
           } else {
             pi++;
@@ -252,11 +300,10 @@ export default {
         });
 
         const out = acts[SIZES.length - 1];
+        stats.pred(OUT_FEATS.map((f, j) => `${OUT_LABELS[j]} ${FIELDS[f].fmt(Math.max(0, toReal(out[j], j)))} vs ${FIELDS[f].fmt(COUNTRIES[sample][f])}`).join(' · '));
+        stats.loss(`${lossShown.toFixed(4)} (started at ${startLoss.toFixed(4)})`);
         stats.cycle(cycle);
-        stats.loss(loss().toFixed(5));
-        stats.out(`[${out.map((v) => v.toFixed(3)).join(', ')}]`);
-        stats.tgt(`[${target.map((v) => v.toFixed(2)).join(', ')}]  input [${input.join(', ')}]`);
-        stats.phase(ph.type === 'fwd' ? `Forward pass: layer ${ph.l} → ${ph.l + 1}` : ph.type === 'bwd' ? `Backpropagation: layer ${ph.l + 1} → ${ph.l}` : 'Gradient descent: updating weights');
+        stats.phase(ph.type === 'fwd' ? `Forward ${ph.l}→${ph.l + 1}` : ph.type === 'bwd' ? `Backprop ${ph.l + 1}→${ph.l}` : 'Update weights');
       },
     };
   },

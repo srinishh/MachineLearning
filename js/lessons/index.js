@@ -1,3 +1,4 @@
+import data from './data.js';
 import intro from './intro.js';
 import linearRegression from './linear-regression.js';
 import gradientDescent from './gradient-descent.js';
@@ -16,6 +17,7 @@ import qLearning from './q-learning.js';
 // Order here is the order shown in the sidebar; lessons with the same
 // category should stay adjacent so they group under one heading.
 export const lessons = [
+  data,
   intro,
   linearRegression,
   gradientDescent,

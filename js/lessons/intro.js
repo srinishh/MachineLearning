@@ -26,6 +26,10 @@ export default {
     <p>The particle cloud stands for a dataset. It starts as noise, then shows the kinds of structure
     learning algorithms look for: groups (clustering), a smooth surface (regression), and a complex
     twisted shape (deep learning).</p>
+    <h3>One real dataset throughout</h3>
+    <p>Every lesson uses the same real-world data: <strong>COVID-19 statistics for 131 countries</strong> (cases, deaths,
+    vaccination, age, wealth and more), plus weekly epidemic curves. The first tab, <strong>Meet the Data</strong>, walks through it.
+    Each lesson then asks the data a different question, and a <em>Real-life scenario</em> box shows where that technique is used in practice.</p>
     <h3>How to use this site</h3>
     <p>Every lesson is a live simulation running the real algorithm in your browser. Drag to orbit, scroll to
     zoom, change the sliders, and use the <strong>Speed</strong> control at the bottom. Lessons get more

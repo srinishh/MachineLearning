@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { lessons } from './lessons/index.js';
-import { addLights, disposeObject } from './helpers.js';
+import { addLights, disposeObject, smoothstep } from './helpers.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -190,9 +190,33 @@ lessons.forEach((lesson, i) => {
 });
 
 function setCamera(position, target = [0, 0, 0]) {
+  fly = null;
   orbit.target.set(...target);
   camera.position.set(...position).sub(orbit.target).multiplyScalar(fit).add(orbit.target);
   orbit.update();
+}
+
+// Smoothly move the camera to a new viewpoint (used by guided walkthroughs).
+let fly = null;
+function flyTo(position, target = [0, 0, 0], duration = 1.2) {
+  const toTarget = new THREE.Vector3(...target);
+  fly = {
+    fromPos: camera.position.clone(),
+    fromTarget: orbit.target.clone(),
+    toTarget,
+    toPos: new THREE.Vector3(...position).sub(toTarget).multiplyScalar(fit).add(toTarget),
+    t: 0,
+    duration,
+  };
+}
+
+function updateFly(dt) {
+  if (!fly) return;
+  fly.t = Math.min(1, fly.t + dt / fly.duration);
+  const k = smoothstep(fly.t);
+  orbit.target.lerpVectors(fly.fromTarget, fly.toTarget, k);
+  camera.position.lerpVectors(fly.fromPos, fly.toPos, k);
+  if (fly.t >= 1) fly = null;
 }
 
 function load(lesson) {
@@ -226,6 +250,7 @@ function load(lesson) {
     orbit,
     ui: createUI(controlsEl, statsEl),
     setCamera,
+    flyTo,
     onClick: (fn) => { clickHandler = fn; },
   };
   active = { lesson, instance: lesson.create(ctx) ?? {} };
@@ -286,6 +311,7 @@ renderer.setAnimationLoop(() => {
   const dt = paused ? 0 : raw * speed;
   elapsed += dt;
   active?.instance?.update?.(dt, elapsed);
+  updateFly(raw);
   orbit.update();
   renderer.render(scene, camera);
 });

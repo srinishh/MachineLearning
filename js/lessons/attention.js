@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { textSprite, clearGroup, PALETTE, damp } from '../helpers.js';
 
-const TOKENS = ['The', 'cat', 'sat', 'on', 'the', 'mat', 'because', 'it', 'was', 'tired'];
+const TOKENS = ['The', 'vaccine', 'was', 'tested', 'on', 'adults', 'so', 'it', 'reduced', 'deaths'];
 const GAP = 1.55;
 const X = (i) => (i - (TOKENS.length - 1) / 2) * GAP;
 
@@ -10,9 +10,9 @@ const SCORES = (() => {
   const n = TOKENS.length;
   const S = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => (i === j ? 1 : Math.abs(i - j) === 1 ? 0.6 : 0)));
   const rel = [
-    [0, 1, 2.2], [1, 2, 1.6], [1, 0, 1.0], [2, 1, 2.6], [2, 5, 1.6], [3, 5, 2.2], [3, 2, 1.2],
-    [4, 5, 2.4], [5, 3, 1.6], [5, 2, 1.2], [6, 2, 1.2], [6, 9, 1.6], [7, 1, 3.2], [7, 9, 1.2],
-    [8, 7, 2.0], [8, 9, 1.6], [9, 7, 2.2], [9, 1, 2.4],
+    [0, 1, 2.2], [1, 3, 1.8], [1, 8, 1.4], [2, 1, 1.6], [2, 3, 2.0], [3, 1, 2.6], [3, 5, 1.8],
+    [4, 5, 2.2], [4, 3, 1.2], [5, 3, 1.8], [5, 4, 1.0], [6, 3, 1.2], [6, 8, 1.6], [7, 1, 3.2],
+    [7, 8, 1.4], [8, 7, 2.2], [8, 1, 2.0], [8, 9, 1.8], [9, 8, 2.4], [9, 5, 1.2],
   ];
   for (const [i, j, v] of rel) S[i][j] = v;
   return S;
@@ -44,10 +44,17 @@ export default {
       <li>The token's new representation is the weighted average of all the values.</li>
     </ul>
     <h3>Reading the animation</h3>
-    <p>Watch <strong>“it”</strong>: it attends mostly to <strong>“cat”</strong>, which is how the model resolves
-    what “it” refers to. Thicker, brighter arcs mean more attention. The weights here are hand-set to
+    <p>The sentence comes from the COVID story: <em>“The vaccine was tested on adults so it reduced deaths.”</em> Watch
+    <strong>“it”</strong>: it attends mostly to <strong>“vaccine”</strong>, which is how the model works out that the vaccine (not the
+    adults) did the reducing. <strong>“reduced”</strong> looks at both what did the reducing and what was reduced (“deaths”). Thicker, brighter arcs mean more attention. The weights here are hand-set to
     illustrate one attention head. A real Transformer learns them, and runs many heads in parallel, each
     tracking a different kind of relationship.</p>
+    <div class="real-life">
+      <h3>Real-life scenario</h3>
+      <p>In 2020 the <strong>CORD-19</strong> dataset gathered hundreds of thousands of coronavirus research papers, far more than anyone
+      could read. Transformer models searched and summarised them to answer questions such as “what is known about transmission?” Today
+      the same architecture powers chatbots and translation, and tools that draft summaries of doctors' clinical notes.</p>
+    </div>
     <h3>Temperature</h3>
     <p>Lower temperature makes the softmax sharper, so attention focuses on one word. Higher temperature
     spreads attention more evenly.</p>
